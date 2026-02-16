@@ -11,15 +11,17 @@ import { AddButton } from "@/components/AddButton";
 import { Player } from "@/components/Player";
 import { EditTextModal } from "@/components/EditTextModal";
 import { Sidebar } from "@/components/Sidebar";
+import { MigrateData } from "@/components/MigrateData";
 
 export default function Home() {
+  const [migrating, setMigrating] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<TextItem | null>(null);
   const [currentItem, setCurrentItem] = useState<TextItem | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
 
-  const { items, folders, isLoading, addItem, updateItem, deleteItem, getItem, addFolder, updateFolder, deleteFolder } = useStorage();
+  const { items, folders, isLoading, addItem, updateItem, deleteItem, getItem, addFolder, updateFolder, deleteFolder, refresh } = useStorage();
 
   const filteredItems = useMemo(() => {
     if (selectedFolderId === null) return items;
@@ -164,6 +166,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-screen max-w-3xl mx-auto">
+      {migrating && <MigrateData onDone={() => { setMigrating(false); refresh(); }} />}
       <header className="flex items-center justify-between p-4 border-b border-border">
         <div className="flex items-center gap-2">
           <button

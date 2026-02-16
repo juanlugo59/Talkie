@@ -1,64 +1,23 @@
 "use client";
 
-import { openDB, DBSchema, IDBPDatabase } from "idb";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { TextItem, Folder, FOLDER_COLORS } from "@/types";
-
-interface TalkieDB extends DBSchema {
-  texts: {
-    key: string;
-    value: TextItem;
-    indexes: { "by-date": number; "by-folder": string };
-  };
-  folders: {
-    key: string;
-    value: Folder;
-    indexes: { "by-date": number };
-  };
-}
-
-const DB_NAME = "talkie-db";
-const DB_VERSION = 2;
-
-let dbPromise: Promise<IDBPDatabase<TalkieDB>> | null = null;
-
-function getDB() {
-  if (!dbPromise) {
-    dbPromise = openDB<TalkieDB>(DB_NAME, DB_VERSION, {
-      blocked() {
-        // If another tab has the DB open, reset so we retry
-        dbPromise = null;
-      },
-      upgrade(db, oldVersion, _newVersion, transaction) {
-        if (oldVersion < 1) {
-          const textStore = db.createObjectStore("texts", { keyPath: "id" });
-          textStore.createIndex("by-date", "createdAt");
-        }
-        if (oldVersion < 2) {
-          const folderStore = db.createObjectStore("folders", { keyPath: "id" });
-          folderStore.createIndex("by-date", "createdAt");
-          // Add folder index to existing texts store
-          const textStore = transaction.objectStore("texts");
-          if (!textStore.indexNames.contains("by-folder")) {
-            textStore.createIndex("by-folder", "folderId");
-          }
-        }
-      },
-    });
-  }
-  return dbPromise;
-}
 
 export function useStorage() {
   const [items, setItems] = useState<TextItem[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const pendingUpdates = useRef<
+    Map<string, { updates: Partial<TextItem>; timer: ReturnType<typeof setTimeout> }>
+  >(new Map());
+
   const loadItems = useCallback(async () => {
     try {
-      const db = await getDB();
-      const allItems = await db.getAllFromIndex("texts", "by-date");
-      setItems(allItems.reverse()); // newest first
+      const res = await fetch("/api/items");
+      if (!res.ok) throw new Error("Failed to load items");
+      const data: TextItem[] = await res.json();
+      setItems(data);
     } catch (error) {
       console.error("Failed to load items:", error);
     } finally {
@@ -68,9 +27,10 @@ export function useStorage() {
 
   const loadFolders = useCallback(async () => {
     try {
-      const db = await getDB();
-      const allFolders = await db.getAllFromIndex("folders", "by-date");
-      setFolders(allFolders.reverse());
+      const res = await fetch("/api/folders");
+      if (!res.ok) throw new Error("Failed to load folders");
+      const data: Folder[] = await res.json();
+      setFolders(data);
     } catch (error) {
       console.error("Failed to load folders:", error);
     }
@@ -83,7 +43,6 @@ export function useStorage() {
 
   const addItem = useCallback(
     async (title: string, content: string, folderId?: string): Promise<TextItem> => {
-      const db = await getDB();
       const newItem: TextItem = {
         id: crypto.randomUUID(),
         title,
@@ -93,8 +52,12 @@ export function useStorage() {
         lastPosition: 0,
         folderId,
       };
-      await db.put("texts", newItem);
       setItems((prev) => [newItem, ...prev]);
+      await fetch("/api/items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newItem),
+      });
       return newItem;
     },
     []
@@ -102,68 +65,95 @@ export function useStorage() {
 
   const updateItem = useCallback(
     async (id: string, updates: Partial<TextItem>) => {
-      const db = await getDB();
-      const existing = await db.get("texts", id);
-      if (existing) {
-        const updated = { ...existing, ...updates };
-        await db.put("texts", updated);
-        setItems((prev) => prev.map((item) => (item.id === id ? updated : item)));
+      // Optimistic local update (always immediate)
+      setItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+      );
+
+      // Debounce progress-only updates to avoid flooding the API
+      const isProgressOnly = Object.keys(updates).every(
+        (k) => k === "progress" || k === "lastPosition"
+      );
+
+      if (isProgressOnly) {
+        const existing = pendingUpdates.current.get(id);
+        if (existing) {
+          clearTimeout(existing.timer);
+          existing.updates = { ...existing.updates, ...updates };
+        }
+        const entry = existing ?? { updates, timer: null as unknown as ReturnType<typeof setTimeout> };
+        entry.timer = setTimeout(async () => {
+          pendingUpdates.current.delete(id);
+          await fetch(`/api/items/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(entry.updates),
+          });
+        }, 5000);
+        if (!existing) pendingUpdates.current.set(id, entry);
+      } else {
+        // Non-progress updates go immediately
+        await fetch(`/api/items/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updates),
+        });
       }
     },
     []
   );
 
   const deleteItem = useCallback(async (id: string) => {
-    const db = await getDB();
-    await db.delete("texts", id);
     setItems((prev) => prev.filter((item) => item.id !== id));
+    await fetch(`/api/items/${id}`, { method: "DELETE" });
   }, []);
 
   const getItem = useCallback(async (id: string): Promise<TextItem | undefined> => {
-    const db = await getDB();
-    return db.get("texts", id);
+    const res = await fetch(`/api/items/${id}`);
+    if (!res.ok) return undefined;
+    const data = await res.json();
+    return data ?? undefined;
   }, []);
 
-  const addFolder = useCallback(async (name: string): Promise<Folder> => {
-    const db = await getDB();
-    const allFolders = await db.getAllFromIndex("folders", "by-date");
-    const colorIndex = allFolders.length % FOLDER_COLORS.length;
-    const newFolder: Folder = {
-      id: crypto.randomUUID(),
-      name,
-      color: colorIndex,
-      createdAt: Date.now(),
-    };
-    await db.put("folders", newFolder);
-    setFolders((prev) => [newFolder, ...prev]);
-    return newFolder;
-  }, []);
+  const addFolder = useCallback(
+    async (name: string): Promise<Folder> => {
+      const colorIndex = folders.length % FOLDER_COLORS.length;
+      const newFolder: Folder = {
+        id: crypto.randomUUID(),
+        name,
+        color: colorIndex,
+        createdAt: Date.now(),
+      };
+      setFolders((prev) => [newFolder, ...prev]);
+      await fetch("/api/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newFolder),
+      });
+      return newFolder;
+    },
+    [folders.length]
+  );
 
   const updateFolder = useCallback(async (id: string, updates: Partial<Folder>) => {
-    const db = await getDB();
-    const existing = await db.get("folders", id);
-    if (existing) {
-      const updated = { ...existing, ...updates };
-      await db.put("folders", updated);
-      setFolders((prev) => prev.map((f) => (f.id === id ? updated : f)));
-    }
+    setFolders((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, ...updates } : f))
+    );
+    await fetch(`/api/folders/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
   }, []);
 
   const deleteFolder = useCallback(async (id: string) => {
-    const db = await getDB();
-    await db.delete("folders", id);
     setFolders((prev) => prev.filter((f) => f.id !== id));
-    // Unassign texts from this folder
-    const allItems = await db.getAllFromIndex("texts", "by-date");
-    for (const item of allItems) {
-      if (item.folderId === id) {
-        const updated = { ...item, folderId: undefined };
-        await db.put("texts", updated);
-      }
-    }
     setItems((prev) =>
-      prev.map((item) => (item.folderId === id ? { ...item, folderId: undefined } : item))
+      prev.map((item) =>
+        item.folderId === id ? { ...item, folderId: undefined } : item
+      )
     );
+    await fetch(`/api/folders/${id}`, { method: "DELETE" });
   }, []);
 
   return {
