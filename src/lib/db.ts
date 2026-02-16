@@ -49,9 +49,25 @@ async function doInit() {
   }
 
   try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS audio_chunks (
+        item_id TEXT NOT NULL REFERENCES text_items(id) ON DELETE CASCADE,
+        chunk_index INTEGER NOT NULL,
+        blob_url TEXT NOT NULL,
+        total_chunks INTEGER NOT NULL,
+        content_hash TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (item_id, chunk_index)
+      )
+    `;
+  } catch (e: unknown) {
+    if (!(e instanceof Error && "code" in e && (e as { code: string }).code === "23505")) throw e;
+  }
+
+  try {
     await sql`CREATE INDEX IF NOT EXISTS idx_text_items_created_at ON text_items(created_at DESC)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_text_items_folder_id ON text_items(folder_id)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_folders_created_at ON folders(created_at DESC)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_audio_chunks_item_id ON audio_chunks(item_id)`;
   } catch {
     // Indexes already exist
   }

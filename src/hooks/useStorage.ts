@@ -98,6 +98,13 @@ export function useStorage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updates),
         });
+
+        // If content changed, invalidate audio cache
+        if (updates.content !== undefined) {
+          fetch(`/api/tts/cache/${id}`, { method: "DELETE" }).catch((err) =>
+            console.error("Cache invalidation failed:", err)
+          );
+        }
       }
     },
     []
@@ -105,6 +112,8 @@ export function useStorage() {
 
   const deleteItem = useCallback(async (id: string) => {
     setItems((prev) => prev.filter((item) => item.id !== id));
+    // Delete audio cache blobs before deleting the item
+    fetch(`/api/tts/cache/${id}`, { method: "DELETE" }).catch(() => {});
     await fetch(`/api/items/${id}`, { method: "DELETE" });
   }, []);
 

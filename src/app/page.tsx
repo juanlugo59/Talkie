@@ -12,6 +12,7 @@ import { Player } from "@/components/Player";
 import { EditTextModal } from "@/components/EditTextModal";
 import { Sidebar } from "@/components/Sidebar";
 import { MigrateData } from "@/components/MigrateData";
+import { useAudioCache } from "@/hooks/useAudioCache";
 
 export default function Home() {
   const [migrating, setMigrating] = useState(true);
@@ -22,6 +23,9 @@ export default function Home() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
 
   const { items, folders, isLoading, addItem, updateItem, deleteItem, getItem, addFolder, updateFolder, deleteFolder, refresh } = useStorage();
+
+  // Background audio pre-generation
+  useAudioCache(items);
 
   const filteredItems = useMemo(() => {
     if (selectedFolderId === null) return items;
