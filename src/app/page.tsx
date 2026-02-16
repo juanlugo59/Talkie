@@ -223,6 +223,7 @@ export default function Home() {
       <Player
         currentItem={currentItem}
         isPlaying={tts.isPlaying}
+        isLoading={tts.isLoading}
         progress={tts.progress}
         onToggle={handleToggle}
       />

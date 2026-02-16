@@ -6,6 +6,7 @@ import { TextItem } from "@/types";
 interface TTSState {
   isPlaying: boolean;
   isPaused: boolean;
+  isLoading: boolean;
   progress: number;
   currentItemId: string | null;
 }
@@ -19,6 +20,7 @@ export function useTTS(options: UseTTSOptions = {}) {
   const [state, setState] = useState<TTSState>({
     isPlaying: false,
     isPaused: false,
+    isLoading: false,
     progress: 0,
     currentItemId: null,
   });
@@ -29,9 +31,14 @@ export function useTTS(options: UseTTSOptions = {}) {
   const totalChunksRef = useRef(0);
   const optionsRef = useRef(options);
   const abortRef = useRef<AbortController | null>(null);
+  const rafRef = useRef<number | null>(null);
   optionsRef.current = options;
 
   const cleanup = useCallback(() => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.removeAttribute("src");
@@ -47,6 +54,10 @@ export function useTTS(options: UseTTSOptions = {}) {
   const fetchAndPlayChunk = useCallback(
     async (item: TextItem, chunkIndex: number) => {
       abortRef.current = new AbortController();
+
+      if (chunkIndex === 0) {
+        setState((prev) => ({ ...prev, isLoading: true }));
+      }
 
       try {
         const res = await fetch("/api/tts", {
@@ -67,21 +78,33 @@ export function useTTS(options: UseTTSOptions = {}) {
         const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
         audioRef.current = audio;
 
-        audio.ontimeupdate = () => {
-          if (!audio.duration || !currentItemRef.current) return;
+        const updateProgress = () => {
+          if (!audio.duration || !currentItemRef.current || audio.paused) return;
           const chunkProgress = audio.currentTime / audio.duration;
-          const overallProgress = Math.round(
-            ((chunkIndex + chunkProgress) / data.totalChunks) * 100
-          );
+          const overallProgress = ((chunkIndex + chunkProgress) / data.totalChunks) * 100;
           const position = Math.round(
             (overallProgress / 100) * currentItemRef.current.content.length
           );
           setState((prev) => ({ ...prev, progress: overallProgress }));
           optionsRef.current.onProgressUpdate?.(
             currentItemRef.current!.id,
-            overallProgress,
+            Math.round(overallProgress),
             position
           );
+          rafRef.current = requestAnimationFrame(updateProgress);
+        };
+
+        const startProgressLoop = () => {
+          if (rafRef.current) cancelAnimationFrame(rafRef.current);
+          rafRef.current = requestAnimationFrame(updateProgress);
+        };
+
+        audio.onplay = () => startProgressLoop();
+        audio.onpause = () => {
+          if (rafRef.current) {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+          }
         };
 
         audio.onended = () => {
@@ -93,6 +116,7 @@ export function useTTS(options: UseTTSOptions = {}) {
             setState({
               isPlaying: false,
               isPaused: false,
+              isLoading: false,
               progress: 100,
               currentItemId: null,
             });
@@ -111,6 +135,7 @@ export function useTTS(options: UseTTSOptions = {}) {
           setState({
             isPlaying: false,
             isPaused: false,
+            isLoading: false,
             progress: 0,
             currentItemId: null,
           });
@@ -118,13 +143,14 @@ export function useTTS(options: UseTTSOptions = {}) {
         };
 
         await audio.play();
-        setState((prev) => ({ ...prev, isPlaying: true, isPaused: false }));
+        setState((prev) => ({ ...prev, isPlaying: true, isPaused: false, isLoading: false }));
       } catch (error: unknown) {
         if (error instanceof Error && error.name === "AbortError") return;
         console.error("TTS error:", error);
         setState({
           isPlaying: false,
           isPaused: false,
+          isLoading: false,
           progress: 0,
           currentItemId: null,
         });
@@ -143,6 +169,7 @@ export function useTTS(options: UseTTSOptions = {}) {
       setState({
         isPlaying: true,
         isPaused: false,
+        isLoading: true,
         currentItemId: item.id,
         progress: 0,
       });
@@ -173,6 +200,7 @@ export function useTTS(options: UseTTSOptions = {}) {
     setState({
       isPlaying: false,
       isPaused: false,
+      isLoading: false,
       progress: 0,
       currentItemId: null,
     });

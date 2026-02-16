@@ -1,6 +1,6 @@
 "use client";
 
-import { TextItem, Folder } from "@/types";
+import { TextItem, Folder, FOLDER_COLORS, estimateDuration } from "@/types";
 
 interface TextListProps {
   items: TextItem[];
@@ -14,9 +14,9 @@ interface TextListProps {
 }
 
 export function TextList({ items, folders, showFolderBadge, currentPlayingId, isPlaying, onPlay, onDelete, onItemClick }: TextListProps) {
-  const getFolderName = (folderId?: string) => {
+  const getFolder = (folderId?: string) => {
     if (!folderId) return null;
-    return folders.find((f) => f.id === folderId)?.name ?? null;
+    return folders.find((f) => f.id === folderId) ?? null;
   };
   if (items.length === 0) {
     return (
@@ -78,12 +78,17 @@ export function TextList({ items, folders, showFolderBadge, currentPlayingId, is
           <div className="flex-1 min-w-0">
             <h3 className="font-medium truncate">{item.title}</h3>
             <p className="text-sm text-muted">
-              {item.progress}% • {formatDate(item.createdAt)}
-              {showFolderBadge && getFolderName(item.folderId) && (
-                <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-accent/15 text-accent">
-                  {getFolderName(item.folderId)}
-                </span>
-              )}
+              {estimateDuration(item.content)} • {formatDate(item.createdAt)}
+              {showFolderBadge && (() => {
+                const folder = getFolder(item.folderId);
+                if (!folder) return null;
+                const color = FOLDER_COLORS[folder.color ?? 0];
+                return (
+                  <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs ${color.bg} ${color.text}`}>
+                    {folder.name}
+                  </span>
+                );
+              })()}
             </p>
           </div>
           <button

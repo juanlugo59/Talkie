@@ -2,7 +2,7 @@
 
 import { openDB, DBSchema, IDBPDatabase } from "idb";
 import { useEffect, useState, useCallback } from "react";
-import { TextItem, Folder } from "@/types";
+import { TextItem, Folder, FOLDER_COLORS } from "@/types";
 
 interface TalkieDB extends DBSchema {
   texts: {
@@ -126,9 +126,12 @@ export function useStorage() {
 
   const addFolder = useCallback(async (name: string): Promise<Folder> => {
     const db = await getDB();
+    const allFolders = await db.getAllFromIndex("folders", "by-date");
+    const colorIndex = allFolders.length % FOLDER_COLORS.length;
     const newFolder: Folder = {
       id: crypto.randomUUID(),
       name,
+      color: colorIndex,
       createdAt: Date.now(),
     };
     await db.put("folders", newFolder);
