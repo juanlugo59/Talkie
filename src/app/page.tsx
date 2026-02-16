@@ -1,65 +1,252 @@
-import Image from "next/image";
+"use client";
+
+import { useState, useCallback, useMemo } from "react";
+import { useStorage } from "@/hooks/useStorage";
+import { useTTS } from "@/hooks/useTTS";
+import { TextItem } from "@/types";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { TextList } from "@/components/TextList";
+import { AddTextModal } from "@/components/AddTextModal";
+import { AddButton } from "@/components/AddButton";
+import { Player } from "@/components/Player";
+import { EditTextModal } from "@/components/EditTextModal";
+import { Sidebar } from "@/components/Sidebar";
 
 export default function Home() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<TextItem | null>(null);
+  const [currentItem, setCurrentItem] = useState<TextItem | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+
+  const { items, folders, isLoading, addItem, updateItem, deleteItem, getItem, addFolder, updateFolder, deleteFolder } = useStorage();
+
+  const filteredItems = useMemo(() => {
+    if (selectedFolderId === null) return items;
+    if (selectedFolderId === "unfiled") return items.filter((item) => !item.folderId);
+    return items.filter((item) => item.folderId === selectedFolderId);
+  }, [items, selectedFolderId]);
+
+  const selectedFolderName = useMemo(() => {
+    if (selectedFolderId === null) return null;
+    if (selectedFolderId === "unfiled") return "Unfiled";
+    return folders.find((f) => f.id === selectedFolderId)?.name ?? null;
+  }, [selectedFolderId, folders]);
+
+  const handleProgressUpdate = useCallback(
+    (id: string, progress: number, position: number) => {
+      updateItem(id, { progress, lastPosition: position });
+    },
+    [updateItem]
+  );
+
+  const handleEnd = useCallback(
+    (id: string) => {
+      updateItem(id, { progress: 100, lastPosition: 0 });
+      setCurrentItem(null);
+    },
+    [updateItem]
+  );
+
+  const tts = useTTS({
+    onProgressUpdate: handleProgressUpdate,
+    onEnd: handleEnd,
+  });
+
+  const handlePlay = useCallback(
+    async (item: TextItem) => {
+      const freshItem = await getItem(item.id);
+      if (freshItem) {
+        setCurrentItem(freshItem);
+        tts.toggle(freshItem);
+      }
+    },
+    [getItem, tts]
+  );
+
+  const handleToggle = useCallback(() => {
+    if (currentItem) {
+      tts.toggle(currentItem);
+    }
+  }, [currentItem, tts]);
+
+  const handleStop = useCallback(() => {
+    tts.stop();
+    setCurrentItem(null);
+  }, [tts]);
+
+  const handleDelete = useCallback(
+    async (id: string) => {
+      if (currentItem?.id === id) {
+        tts.stop();
+        setCurrentItem(null);
+      }
+      await deleteItem(id);
+    },
+    [currentItem, tts, deleteItem]
+  );
+
+  const handleAddText = useCallback(
+    async (title: string, content: string, folderId?: string) => {
+      await addItem(title, content, folderId);
+    },
+    [addItem]
+  );
+
+  const handleItemClick = useCallback(
+    async (item: TextItem) => {
+      const freshItem = await getItem(item.id);
+      if (freshItem) {
+        setEditingItem(freshItem);
+      }
+    },
+    [getItem]
+  );
+
+  const handleSaveItem = useCallback(
+    async (id: string, title: string, content: string) => {
+      await updateItem(id, { title, content });
+      const freshItem = await getItem(id);
+      if (freshItem) {
+        setEditingItem(freshItem);
+      }
+    },
+    [updateItem, getItem]
+  );
+
+  const handleDeleteFromEdit = useCallback(
+    async (id: string) => {
+      if (currentItem?.id === id) {
+        tts.stop();
+        setCurrentItem(null);
+      }
+      await deleteItem(id);
+      setEditingItem(null);
+    },
+    [currentItem, tts, deleteItem]
+  );
+
+  const handlePlayFromEdit = useCallback(
+    async (item: TextItem) => {
+      const freshItem = await getItem(item.id);
+      if (freshItem) {
+        setCurrentItem(freshItem);
+        tts.toggle(freshItem);
+        setEditingItem(freshItem);
+      }
+    },
+    [getItem, tts]
+  );
+
+  const handleAddFolder = useCallback(
+    async (name: string) => {
+      await addFolder(name);
+    },
+    [addFolder]
+  );
+
+  const handleRenameFolder = useCallback(
+    async (id: string, name: string) => {
+      await updateFolder(id, { name });
+    },
+    [updateFolder]
+  );
+
+  const handleDeleteFolder = useCallback(
+    async (id: string) => {
+      if (selectedFolderId === id) {
+        setSelectedFolderId(null);
+      }
+      await deleteFolder(id);
+    },
+    [deleteFolder, selectedFolderId]
+  );
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="flex flex-col h-screen max-w-3xl mx-auto">
+      <header className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2 hover:bg-card rounded-lg transition-colors"
+            aria-label="Open folders"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <h1 className="text-xl font-bold">{selectedFolderName ?? "Talkie"}</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          {currentItem && (
+            <button
+              onClick={handleStop}
+              className="p-2 hover:bg-card rounded-lg transition-colors text-muted"
+              aria-label="Stop playback"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+          <ThemeToggle />
+        </div>
+      </header>
+
+      {isLoading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : (
+        <TextList
+          items={filteredItems}
+          folders={folders}
+          showFolderBadge={selectedFolderId === null}
+          currentPlayingId={tts.currentItemId}
+          isPlaying={tts.isPlaying}
+          onPlay={handlePlay}
+          onDelete={handleDelete}
+          onItemClick={handleItemClick}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      )}
+
+      <AddButton onClick={() => setIsModalOpen(true)} isPlayerVisible={!!currentItem} />
+
+      <AddTextModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onAdd={handleAddText}
+        folders={folders}
+        defaultFolderId={selectedFolderId === "unfiled" ? undefined : selectedFolderId ?? undefined}
+      />
+
+      <Player
+        currentItem={currentItem}
+        isPlaying={tts.isPlaying}
+        progress={tts.progress}
+        onToggle={handleToggle}
+      />
+
+      <EditTextModal
+        item={editingItem}
+        isPlaying={tts.isPlaying && tts.currentItemId === editingItem?.id}
+        onClose={() => setEditingItem(null)}
+        onSave={handleSaveItem}
+        onDelete={handleDeleteFromEdit}
+        onPlay={handlePlayFromEdit}
+      />
+
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        folders={folders}
+        items={items}
+        selectedFolderId={selectedFolderId}
+        onSelectFolder={setSelectedFolderId}
+        onAddFolder={handleAddFolder}
+        onRenameFolder={handleRenameFolder}
+        onDeleteFolder={handleDeleteFolder}
+      />
     </div>
   );
 }

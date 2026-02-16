@@ -36,6 +36,19 @@ yarn-error.log*
 # vercel
 .vercel
 
+# playwright mcp (contains credentials)
+.playwright-mcp/
+
+# claude code
+.claude/
+SESSION_STATE.md
+SKILL.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# PWA
+public/sw.js
+public/workbox-*.js
+public/worker-*.js

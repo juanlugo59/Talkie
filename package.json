@@ -9,15 +9,20 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google-cloud/text-to-speech": "^6.4.0",
+    "@serwist/next": "^9.4.2",
+    "idb": "^8.0.3",
     "next": "16.1.1",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "serwist": "^9.4.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/serviceworker": "^0.0.172",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "tailwindcss": "^4",
