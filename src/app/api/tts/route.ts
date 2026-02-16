@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { splitTextIntoChunks, synthesizeChunk } from "@/lib/tts";
 
+export const maxDuration = 30;
+
 export async function POST(request: NextRequest) {
   try {
     const { text, chunkIndex = 0 } = await request.json();
@@ -28,9 +30,10 @@ export async function POST(request: NextRequest) {
       hasMore: chunkIndex < chunks.length - 1,
     });
   } catch (error) {
-    console.error("TTS API error:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("TTS API error:", message);
     return NextResponse.json(
-      { error: "Failed to synthesize speech" },
+      { error: `Failed to synthesize speech: ${message}` },
       { status: 500 }
     );
   }

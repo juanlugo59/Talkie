@@ -75,10 +75,12 @@ export async function POST(request: NextRequest) {
       alreadyCached: false,
     });
   } catch (error) {
-    console.error("TTS generate error:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const isTimeout = message.includes("abort");
+    console.error("TTS generate error:", message);
     return NextResponse.json(
-      { error: "Generation failed" },
-      { status: 500 }
+      { error: `Generation failed: ${message}` },
+      { status: isTimeout ? 504 : 500 }
     );
   }
 }

@@ -3,6 +3,13 @@
 import { useEffect, useRef, useCallback } from "react";
 import { TextItem } from "@/types";
 
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 2000;
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function useAudioCache(items: TextItem[]) {
   const generatingRef = useRef<Set<string>>(new Set());
   const mountedRef = useRef(true);
@@ -30,7 +37,7 @@ export function useAudioCache(items: TextItem[]) {
 
       const startChunk = cache.cached ? cache.generatedCount : 0;
 
-      // Generate chunks sequentially
+      // Generate chunks sequentially with retry
       let chunkIndex = startChunk;
       let done = false;
 
@@ -39,20 +46,47 @@ export function useAudioCache(items: TextItem[]) {
         mountedRef.current &&
         versionRef.current.get(item.id) === version
       ) {
-        const genRes = await fetch("/api/tts/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ itemId: item.id, chunkIndex }),
-        });
+        let lastError: Error | null = null;
+        let succeeded = false;
 
-        if (!genRes.ok) {
-          if (genRes.status === 404) break; // Item deleted
-          throw new Error("Generation failed");
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+          if (!mountedRef.current || versionRef.current.get(item.id) !== version) break;
+
+          try {
+            const genRes = await fetch("/api/tts/generate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ itemId: item.id, chunkIndex }),
+            });
+
+            if (!genRes.ok) {
+              if (genRes.status === 404) {
+                // Item deleted, stop entirely
+                return;
+              }
+              throw new Error(`Generation failed (${genRes.status})`);
+            }
+
+            const result = await genRes.json();
+            done = result.done;
+            chunkIndex++;
+            succeeded = true;
+            break;
+          } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            if (attempt < MAX_RETRIES - 1) {
+              const backoff = BASE_DELAY_MS * Math.pow(2, attempt);
+              console.warn(
+                `Chunk ${chunkIndex} for ${item.id} failed (attempt ${attempt + 1}/${MAX_RETRIES}), retrying in ${backoff}ms...`
+              );
+              await delay(backoff);
+            }
+          }
         }
 
-        const result = await genRes.json();
-        done = result.done;
-        chunkIndex++;
+        if (!succeeded) {
+          throw lastError ?? new Error("Generation failed after retries");
+        }
       }
 
       if (done) {

@@ -2,6 +2,19 @@ import { SignJWT, importPKCS8 } from "jose";
 
 const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const MAX_BYTES = 4500;
+const FETCH_TIMEOUT_MS = 15000; // 15s timeout for external API calls
+
+function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs = FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() =>
+    clearTimeout(timer)
+  );
+}
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
@@ -27,11 +40,15 @@ export async function getAccessToken(): Promise<string> {
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
     .sign(key);
 
-  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
-  });
+  const tokenRes = await fetchWithTimeout(
+    "https://oauth2.googleapis.com/token",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+    },
+    10000 // 10s for token exchange
+  );
 
   if (!tokenRes.ok) {
     throw new Error(`Token exchange failed: ${tokenRes.status}`);
@@ -77,7 +94,7 @@ export async function synthesizeChunk(
 ): Promise<{ base64: string; buffer: Buffer }> {
   const accessToken = await getAccessToken();
 
-  const ttsRes = await fetch(TTS_ENDPOINT, {
+  const ttsRes = await fetchWithTimeout(TTS_ENDPOINT, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -96,8 +113,8 @@ export async function synthesizeChunk(
   });
 
   if (!ttsRes.ok) {
-    const err = await ttsRes.text();
-    throw new Error(`Google TTS API error: ${err}`);
+    const err = await ttsRes.text().catch(() => "unknown");
+    throw new Error(`Google TTS API error (${ttsRes.status}): ${err}`);
   }
 
   const ttsData = await ttsRes.json();
