@@ -27,6 +27,7 @@ export function useAudioCache(items: TextItem[]) {
   const mountedRef = useRef(true);
   const versionRef = useRef<Map<string, number>>(new Map());
   const completedRef = useRef<Set<string>>(new Set());
+  const initialGenDone = useRef(false);
 
   const checkAndGenerate = useCallback(async (item: TextItem) => {
     if (generatingRef.current.has(item.id)) return;
@@ -120,15 +121,6 @@ export function useAudioCache(items: TextItem[]) {
     }
   }, []);
 
-  useEffect(() => {
-    mountedRef.current = true;
-    // NO automatic generation on page load — prevents serverless concurrency issues.
-    // Background generation is triggered via generateAll() after playback ends.
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
   const generateAll = useCallback(async () => {
     for (const item of items) {
       if (!mountedRef.current) break;
@@ -140,6 +132,23 @@ export function useAudioCache(items: TextItem[]) {
       await checkAndGenerate(item);
     }
   }, [items, checkAndGenerate]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    // Auto-generate audio for all items once after page load.
+    // Runs sequentially (one chunk at a time) and yields to live playback via pause/resume.
+    if (initialGenDone.current || items.length === 0) return;
+    const timer = setTimeout(() => {
+      if (mountedRef.current && !initialGenDone.current) {
+        initialGenDone.current = true;
+        generateAll();
+      }
+    }, 3000);
+    return () => {
+      clearTimeout(timer);
+      mountedRef.current = false;
+    };
+  }, [items, generateAll]);
 
   const invalidate = useCallback(
     async (itemId: string) => {
