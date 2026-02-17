@@ -104,7 +104,7 @@ export async function synthesizeChunk(
       input: { text: chunkText },
       voice: {
         languageCode: "en-US",
-        name: "en-US-Chirp3-HD-Algenib",
+        name: "en-US-Neural2-F",
       },
       audioConfig: {
         audioEncoding: "MP3",

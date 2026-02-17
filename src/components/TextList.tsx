@@ -42,8 +42,8 @@ export function TextList({ items, folders, showFolderBadge, currentPlayingId, is
     );
   }
 
-  const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp);
+  const formatDate = (timestamp: number | string) => {
+    const date = new Date(typeof timestamp === "string" ? Number(timestamp) : timestamp);
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
