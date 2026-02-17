@@ -1,79 +1,58 @@
-import { NextResponse } from "next/server";
-import { getAccessToken } from "@/lib/tts";
+import { NextRequest, NextResponse } from "next/server";
+import { splitTextIntoChunks, synthesizeChunk } from "@/lib/tts";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
+// GET — quick check (no body needed)
 export async function GET() {
-  const results: Record<string, unknown> = {};
-  const token = await getAccessToken();
-
-  // Test Chirp 3 HD Algenib on v1beta1
   const t0 = Date.now();
   try {
-    const res = await fetch(
-      "https://texttospeech.googleapis.com/v1beta1/text:synthesize",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          input: { text: "Hello, this is a voice test for Algenib." },
-          voice: { languageCode: "en-US", name: "en-US-Chirp3-HD-Algenib" },
-          audioConfig: { audioEncoding: "MP3" },
-        }),
-      }
-    );
-    results.chirp3_algenib_v1beta1 = {
-      ok: res.ok,
-      status: res.status,
+    const { base64 } = await synthesizeChunk("Hello, this is a cold start test.");
+    return NextResponse.json({
+      ok: true,
       ms: Date.now() - t0,
-      ...(res.ok
-        ? { bytes: (await res.json()).audioContent?.length ?? 0 }
-        : { error: await res.text() }),
-    };
+      audioBytes: base64.length,
+    });
   } catch (e) {
-    results.chirp3_algenib_v1beta1 = {
+    return NextResponse.json({
       ok: false,
       ms: Date.now() - t0,
       error: e instanceof Error ? e.message : String(e),
-    };
+    });
   }
+}
 
-  // Test Neural2-F on v1 (for comparison)
-  const t1 = Date.now();
+// POST — exact same flow as /api/tts (to test if POST works)
+export async function POST(request: NextRequest) {
+  const t0 = Date.now();
   try {
-    const res = await fetch(
-      "https://texttospeech.googleapis.com/v1/text:synthesize",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          input: { text: "Hello, this is a voice test for Neural2." },
-          voice: { languageCode: "en-US", name: "en-US-Neural2-F" },
-          audioConfig: { audioEncoding: "MP3" },
-        }),
-      }
-    );
-    results.neural2f_v1 = {
-      ok: res.ok,
-      status: res.status,
-      ms: Date.now() - t1,
-      ...(res.ok
-        ? { bytes: (await res.json()).audioContent?.length ?? 0 }
-        : { error: await res.text() }),
-    };
-  } catch (e) {
-    results.neural2f_v1 = {
-      ok: false,
-      ms: Date.now() - t1,
-      error: e instanceof Error ? e.message : String(e),
-    };
-  }
+    const { text, chunkIndex = 0 } = await request.json();
+    const tParse = Date.now() - t0;
 
-  return NextResponse.json(results);
+    const chunks = splitTextIntoChunks(text);
+    const chunk = chunks[chunkIndex];
+    if (!chunk) {
+      return NextResponse.json({ error: "No chunk" }, { status: 400 });
+    }
+    const tSplit = Date.now() - t0;
+
+    const { base64 } = await synthesizeChunk(chunk);
+    const tSynth = Date.now() - t0;
+
+    return NextResponse.json({
+      ok: true,
+      parseMs: tParse,
+      splitMs: tSplit,
+      synthMs: tSynth,
+      totalMs: Date.now() - t0,
+      totalChunks: chunks.length,
+      audioBytes: base64.length,
+    });
+  } catch (e) {
+    return NextResponse.json({
+      ok: false,
+      totalMs: Date.now() - t0,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
 }
