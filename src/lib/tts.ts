@@ -1,6 +1,7 @@
 import { SignJWT, importPKCS8 } from "jose";
 
-const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
+const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1beta1/text:synthesize";
+const TTS_VOICE = "en-US-Chirp3-HD-Algenib";
 const MAX_BYTES = 4500;
 const FETCH_TIMEOUT_MS = 15000; // 15s timeout for external API calls
 
@@ -104,7 +105,7 @@ export async function synthesizeChunk(
       input: { text: chunkText },
       voice: {
         languageCode: "en-US",
-        name: "en-US-Neural2-F",
+        name: TTS_VOICE,
       },
       audioConfig: {
         audioEncoding: "MP3",
@@ -130,7 +131,7 @@ export async function synthesizeChunk(
 
 export async function hashContent(content: string): Promise<string> {
   const encoder = new TextEncoder();
-  const data = encoder.encode(content);
+  const data = encoder.encode(TTS_VOICE + ":" + content);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray
