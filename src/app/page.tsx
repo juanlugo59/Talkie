@@ -24,8 +24,8 @@ export default function Home() {
 
   const { items, folders, isLoading, addItem, updateItem, deleteItem, getItem, addFolder, updateFolder, deleteFolder, refresh } = useStorage();
 
-  // Background audio pre-generation
-  useAudioCache(items);
+  // Background audio generation (triggered after playback, not on page load)
+  const { generateAll } = useAudioCache(items);
 
   const filteredItems = useMemo(() => {
     if (selectedFolderId === null) return items;
@@ -50,8 +50,10 @@ export default function Home() {
     (id: string) => {
       updateItem(id, { progress: 100, lastPosition: 0 });
       setCurrentItem(null);
+      // Now that playback is done, generate remaining audio in the background
+      generateAll();
     },
-    [updateItem]
+    [updateItem, generateAll]
   );
 
   const tts = useTTS({

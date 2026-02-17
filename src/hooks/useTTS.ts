@@ -198,8 +198,10 @@ export function useTTS(options: UseTTSOptions = {}) {
         });
 
         if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || "TTS request failed");
+          const text = await res.text();
+          let message = `TTS request failed (${res.status})`;
+          try { message = JSON.parse(text).error || message; } catch {}
+          throw new Error(message);
         }
 
         const data = await res.json();

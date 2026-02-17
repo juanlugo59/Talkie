@@ -5,7 +5,6 @@ import { TextItem } from "@/types";
 
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 2000;
-const INITIAL_DELAY_MS = 3000; // Wait before starting background generation
 const CHUNK_GAP_MS = 500; // Breathing room between chunks for other requests
 
 function delay(ms: number) {
@@ -123,27 +122,23 @@ export function useAudioCache(items: TextItem[]) {
 
   useEffect(() => {
     mountedRef.current = true;
-
-    const processQueue = async () => {
-      // Defer start so user interactions take priority
-      await delay(INITIAL_DELAY_MS);
-
-      for (const item of items) {
-        if (!mountedRef.current) break;
-        if (
-          completedRef.current.has(item.id) ||
-          generatingRef.current.has(item.id)
-        )
-          continue;
-        await checkAndGenerate(item);
-      }
-    };
-
-    processQueue();
-
+    // NO automatic generation on page load — prevents serverless concurrency issues.
+    // Background generation is triggered via generateAll() after playback ends.
     return () => {
       mountedRef.current = false;
     };
+  }, []);
+
+  const generateAll = useCallback(async () => {
+    for (const item of items) {
+      if (!mountedRef.current) break;
+      if (
+        completedRef.current.has(item.id) ||
+        generatingRef.current.has(item.id)
+      )
+        continue;
+      await checkAndGenerate(item);
+    }
   }, [items, checkAndGenerate]);
 
   const invalidate = useCallback(
@@ -164,5 +159,5 @@ export function useAudioCache(items: TextItem[]) {
     [items, checkAndGenerate]
   );
 
-  return { invalidate };
+  return { invalidate, generateAll };
 }
