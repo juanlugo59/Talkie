@@ -3,19 +3,6 @@ import { SignJWT, importPKCS8 } from "jose";
 const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1beta1/text:synthesize";
 const TTS_VOICE = "en-US-Chirp3-HD-Algenib";
 const MAX_BYTES = 4500;
-const FETCH_TIMEOUT_MS = 8000; // 8s timeout (Hobby plan kills at 10s)
-
-function fetchWithTimeout(
-  url: string,
-  options: RequestInit,
-  timeoutMs = FETCH_TIMEOUT_MS
-): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, { ...options, signal: controller.signal }).finally(() =>
-    clearTimeout(timer)
-  );
-}
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
@@ -41,15 +28,11 @@ export async function getAccessToken(): Promise<string> {
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
     .sign(key);
 
-  const tokenRes = await fetchWithTimeout(
-    "https://oauth2.googleapis.com/token",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
-    },
-    10000 // 10s for token exchange
-  );
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  });
 
   if (!tokenRes.ok) {
     throw new Error(`Token exchange failed: ${tokenRes.status}`);
@@ -95,7 +78,7 @@ export async function synthesizeChunk(
 ): Promise<{ base64: string; buffer: Buffer }> {
   const accessToken = await getAccessToken();
 
-  const ttsRes = await fetchWithTimeout(TTS_ENDPOINT, {
+  const ttsRes = await fetch(TTS_ENDPOINT, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
