@@ -1,60 +1,79 @@
 import { NextResponse } from "next/server";
-import { getAccessToken, synthesizeChunk } from "@/lib/tts";
-import { put, del } from "@vercel/blob";
-import { getSQL, ensureSchema } from "@/lib/db";
+import { getAccessToken } from "@/lib/tts";
 
 export const maxDuration = 30;
 
 export async function GET() {
   const results: Record<string, unknown> = {};
+  const token = await getAccessToken();
 
-  // Step 1: Token exchange
+  // Test Chirp 3 HD Algenib on v1beta1
   const t0 = Date.now();
   try {
-    const token = await getAccessToken();
-    results.step1_token = { ok: true, ms: Date.now() - t0, preview: token.substring(0, 20) + "..." };
+    const res = await fetch(
+      "https://texttospeech.googleapis.com/v1beta1/text:synthesize",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          input: { text: "Hello, this is a voice test for Algenib." },
+          voice: { languageCode: "en-US", name: "en-US-Chirp3-HD-Algenib" },
+          audioConfig: { audioEncoding: "MP3" },
+        }),
+      }
+    );
+    results.chirp3_algenib_v1beta1 = {
+      ok: res.ok,
+      status: res.status,
+      ms: Date.now() - t0,
+      ...(res.ok
+        ? { bytes: (await res.json()).audioContent?.length ?? 0 }
+        : { error: await res.text() }),
+    };
   } catch (e) {
-    results.step1_token = { ok: false, ms: Date.now() - t0, error: e instanceof Error ? e.message : String(e) };
-    return NextResponse.json(results);
+    results.chirp3_algenib_v1beta1 = {
+      ok: false,
+      ms: Date.now() - t0,
+      error: e instanceof Error ? e.message : String(e),
+    };
   }
 
-  // Step 2: synthesizeChunk (uses fetchWithTimeout)
+  // Test Neural2-F on v1 (for comparison)
   const t1 = Date.now();
   try {
-    const { buffer } = await synthesizeChunk("Hello, this is a test.");
-    results.step2_synthesize = { ok: true, ms: Date.now() - t1, bytes: buffer.length };
+    const res = await fetch(
+      "https://texttospeech.googleapis.com/v1/text:synthesize",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          input: { text: "Hello, this is a voice test for Neural2." },
+          voice: { languageCode: "en-US", name: "en-US-Neural2-F" },
+          audioConfig: { audioEncoding: "MP3" },
+        }),
+      }
+    );
+    results.neural2f_v1 = {
+      ok: res.ok,
+      status: res.status,
+      ms: Date.now() - t1,
+      ...(res.ok
+        ? { bytes: (await res.json()).audioContent?.length ?? 0 }
+        : { error: await res.text() }),
+    };
   } catch (e) {
-    results.step2_synthesize = { ok: false, ms: Date.now() - t1, error: e instanceof Error ? e.message : String(e) };
-    return NextResponse.json(results);
+    results.neural2f_v1 = {
+      ok: false,
+      ms: Date.now() - t1,
+      error: e instanceof Error ? e.message : String(e),
+    };
   }
 
-  // Step 3: DB connection (ensureSchema + query)
-  const t2 = Date.now();
-  try {
-    await ensureSchema();
-    const sql = getSQL();
-    const rows = await sql`SELECT COUNT(*) AS count FROM text_items`;
-    results.step3_db = { ok: true, ms: Date.now() - t2, itemCount: rows[0].count };
-  } catch (e) {
-    results.step3_db = { ok: false, ms: Date.now() - t2, error: e instanceof Error ? e.message : String(e) };
-    return NextResponse.json(results);
-  }
-
-  // Step 4: Vercel Blob upload + delete
-  const t3 = Date.now();
-  try {
-    const testBuffer = Buffer.from("test");
-    const blob = await put("_test/diagnostic.txt", testBuffer, {
-      access: "public",
-      contentType: "text/plain",
-      addRandomSuffix: false,
-    });
-    await del(blob.url);
-    results.step4_blob = { ok: true, ms: Date.now() - t3, url: blob.url };
-  } catch (e) {
-    results.step4_blob = { ok: false, ms: Date.now() - t3, error: e instanceof Error ? e.message : String(e) };
-  }
-
-  results.totalMs = Date.now() - t0;
   return NextResponse.json(results);
 }
