@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { TextItem } from "@/types";
+import { pauseBackgroundGeneration, resumeBackgroundGeneration } from "./useAudioCache";
 
 interface TTSState {
   isPlaying: boolean;
@@ -109,6 +110,7 @@ export function useTTS(options: UseTTSOptions = {}) {
           );
           optionsRef.current.onEnd?.(id);
           currentItemRef.current = null;
+          resumeBackgroundGeneration();
         }
       };
 
@@ -234,6 +236,7 @@ export function useTTS(options: UseTTSOptions = {}) {
           currentItemId: null,
         });
         currentItemRef.current = null;
+        resumeBackgroundGeneration();
       }
     },
     [setupChunkPlayback]
@@ -252,6 +255,9 @@ export function useTTS(options: UseTTSOptions = {}) {
         currentItemId: item.id,
         progress: 0,
       });
+
+      // Pause background generation so our request gets through
+      pauseBackgroundGeneration();
 
       // Check for cached audio first
       try {
@@ -298,6 +304,7 @@ export function useTTS(options: UseTTSOptions = {}) {
       progress: 0,
       currentItemId: null,
     });
+    resumeBackgroundGeneration();
   }, [cleanup]);
 
   const toggle = useCallback(

@@ -5,9 +5,22 @@ import { TextItem } from "@/types";
 
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 2000;
+const INITIAL_DELAY_MS = 3000; // Wait before starting background generation
+const CHUNK_GAP_MS = 500; // Breathing room between chunks for other requests
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Shared pause flag — set by useTTS when user is playing
+let paused = false;
+export function pauseBackgroundGeneration() { paused = true; }
+export function resumeBackgroundGeneration() { paused = false; }
+
+async function waitWhilePaused() {
+  while (paused) {
+    await delay(500);
+  }
 }
 
 export function useAudioCache(items: TextItem[]) {
@@ -46,6 +59,10 @@ export function useAudioCache(items: TextItem[]) {
         mountedRef.current &&
         versionRef.current.get(item.id) === version
       ) {
+        // Yield to playback requests
+        await waitWhilePaused();
+        if (!mountedRef.current || versionRef.current.get(item.id) !== version) break;
+
         let lastError: Error | null = null;
         let succeeded = false;
 
@@ -87,6 +104,11 @@ export function useAudioCache(items: TextItem[]) {
         if (!succeeded) {
           throw lastError ?? new Error("Generation failed after retries");
         }
+
+        // Breathing room between chunks so we don't saturate serverless capacity
+        if (!done) {
+          await delay(CHUNK_GAP_MS);
+        }
       }
 
       if (done) {
@@ -103,6 +125,9 @@ export function useAudioCache(items: TextItem[]) {
     mountedRef.current = true;
 
     const processQueue = async () => {
+      // Defer start so user interactions take priority
+      await delay(INITIAL_DELAY_MS);
+
       for (const item of items) {
         if (!mountedRef.current) break;
         if (

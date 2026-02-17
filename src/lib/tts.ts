@@ -3,7 +3,7 @@ import { SignJWT, importPKCS8 } from "jose";
 const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1beta1/text:synthesize";
 const TTS_VOICE = "en-US-Chirp3-HD-Algenib";
 const MAX_BYTES = 4500;
-const FETCH_TIMEOUT_MS = 15000; // 15s timeout for external API calls
+const FETCH_TIMEOUT_MS = 8000; // 8s timeout (Hobby plan kills at 10s)
 
 function fetchWithTimeout(
   url: string,
