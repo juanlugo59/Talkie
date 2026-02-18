@@ -112,9 +112,25 @@ export async function synthesizeChunk(
   return { base64, buffer };
 }
 
+export function stripMarkdown(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, "")       // ## headings
+    .replace(/\*\*(.+?)\*\*/g, "$1")    // **bold**
+    .replace(/\*(.+?)\*/g, "$1")        // *italic*
+    .replace(/__(.+?)__/g, "$1")        // __bold__
+    .replace(/_(.+?)_/g, "$1")          // _italic_
+    .replace(/~~(.+?)~~/g, "$1")        // ~~strikethrough~~
+    .replace(/`(.+?)`/g, "$1")          // `inline code`
+    .replace(/^\s*[-*+]\s+/gm, "")      // - list items
+    .replace(/^\s*\d+\.\s+/gm, "")      // 1. ordered lists
+    .replace(/\[(.+?)\]\(.+?\)/g, "$1") // [links](url)
+    .replace(/!\[.*?\]\(.+?\)/g, "");   // ![images](url)
+}
+
 export async function hashContent(content: string): Promise<string> {
+  const clean = stripMarkdown(content);
   const encoder = new TextEncoder();
-  const data = encoder.encode(TTS_VOICE + ":" + content);
+  const data = encoder.encode(TTS_VOICE + ":" + clean);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray

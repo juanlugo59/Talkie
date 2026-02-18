@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { del } from "@vercel/blob";
 import { getSQL, ensureSchema } from "@/lib/db";
 import { hashContent } from "@/lib/tts";
 
@@ -60,21 +59,8 @@ export async function DELETE(
   const sql = getSQL();
   const { itemId } = await params;
 
-  // Get all blob URLs before deleting DB rows
-  const chunks = await sql`
-    SELECT blob_url FROM audio_chunks WHERE item_id = ${itemId}
-  `;
+  // Delete DB rows (Dropbox files can be cleaned up manually if needed)
+  const result = await sql`DELETE FROM audio_chunks WHERE item_id = ${itemId}`;
 
-  // Delete DB rows
-  await sql`DELETE FROM audio_chunks WHERE item_id = ${itemId}`;
-
-  // Delete blob files (fire-and-forget)
-  if (chunks.length > 0) {
-    const urls = chunks.map((c) => c.blob_url as string);
-    del(urls).catch((err) =>
-      console.error("Blob deletion error:", err)
-    );
-  }
-
-  return NextResponse.json({ ok: true, deletedChunks: chunks.length });
+  return NextResponse.json({ ok: true, deletedChunks: result.length });
 }
