@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { splitTextIntoChunks, synthesizeChunk } from "@/lib/tts";
+import { splitTextIntoChunks, synthesizeChunk, stripMarkdown } from "@/lib/tts";
 
 export const maxDuration = 60;
 
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Text is required" }, { status: 400 });
     }
 
-    const chunks = splitTextIntoChunks(text);
+    const chunks = splitTextIntoChunks(stripMarkdown(text));
     const chunk = chunks[chunkIndex];
 
     if (!chunk) {

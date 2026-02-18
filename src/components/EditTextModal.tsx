@@ -7,7 +7,7 @@ import { HighlightedText } from "@/components/HighlightedText";
 interface EditTextModalProps {
   item: TextItem | null;
   isPlaying: boolean;
-  currentPosition: number;
+  progress: number;
   onClose: () => void;
   onSave: (id: string, title: string, content: string) => void;
   onDelete: (id: string) => void;
@@ -17,7 +17,7 @@ interface EditTextModalProps {
 export function EditTextModal({
   item,
   isPlaying,
-  currentPosition,
+  progress,
   onClose,
   onSave,
   onDelete,
@@ -178,7 +178,7 @@ export function EditTextModal({
           ) : (
             <HighlightedText
               text={item.content}
-              currentPosition={currentPosition}
+              progress={progress}
               isActive={isPlaying}
             />
           )}

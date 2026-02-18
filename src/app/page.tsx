@@ -238,9 +238,9 @@ export default function Home() {
       <EditTextModal
         item={editingItem}
         isPlaying={tts.isPlaying && tts.currentItemId === editingItem?.id}
-        currentPosition={
+        progress={
           tts.isPlaying && tts.currentItemId === editingItem?.id
-            ? tts.currentPosition
+            ? tts.progress
             : 0
         }
         onClose={() => setEditingItem(null)}

@@ -1,25 +1,26 @@
 "use client";
 
 import { useMemo, useRef, useEffect } from "react";
-import { tokenizeText, findActiveWordIndex } from "@/lib/tokenize";
+import { tokenizeText, computeWordWeights, findActiveWordByProgress } from "@/lib/tokenize";
 
 interface HighlightedTextProps {
   text: string;
-  currentPosition: number;
+  progress: number;
   isActive: boolean;
 }
 
 export function HighlightedText({
   text,
-  currentPosition,
+  progress,
   isActive,
 }: HighlightedTextProps) {
   const tokens = useMemo(() => tokenizeText(text), [text]);
+  const weights = useMemo(() => computeWordWeights(tokens), [tokens]);
   const activeWordRef = useRef<HTMLSpanElement>(null);
   const lastScrollTime = useRef(0);
 
   const activeWordIndex = isActive
-    ? findActiveWordIndex(tokens, currentPosition)
+    ? findActiveWordByProgress(tokens, weights, progress)
     : -1;
 
   useEffect(() => {
@@ -54,14 +55,13 @@ export function HighlightedText({
   }
 
   return (
-    <div className="whitespace-pre-wrap leading-relaxed text-foreground/40">
+    <div className="whitespace-pre-wrap leading-relaxed text-foreground/90">
       {tokens.map((token, i) => {
-        const isActiveWord = i === activeWordIndex;
-        const isPastWord = token.isWord && i < activeWordIndex;
-
         if (!token.isWord) {
           return <span key={i}>{token.text}</span>;
         }
+
+        const isActiveWord = i === activeWordIndex;
 
         return (
           <span
@@ -69,10 +69,8 @@ export function HighlightedText({
             ref={isActiveWord ? activeWordRef : undefined}
             className={
               isActiveWord
-                ? "text-foreground bg-accent/25 rounded-md px-1 py-0.5 -mx-1 transition-colors duration-150"
-                : isPastWord
-                  ? "text-foreground/80 transition-colors duration-150"
-                  : "transition-colors duration-150"
+                ? "text-foreground bg-accent/25 rounded-md px-1 py-0.5 -mx-1"
+                : undefined
             }
           >
             {token.text}
