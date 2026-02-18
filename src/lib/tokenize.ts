@@ -22,14 +22,15 @@ export function tokenizeText(text: string): TextToken[] {
 
 /**
  * Compute a speaking-duration weight for each token.
- * Longer words take more time; sentence-ending punctuation adds pause weight.
+ * TTS speaks at roughly constant words/sec, so each word gets weight 1.
+ * Punctuation adds pause weight to model natural speech pauses.
  */
 export function computeWordWeights(tokens: TextToken[]): number[] {
   return tokens.map((token) => {
     if (!token.isWord) return 0;
-    let weight = token.text.replace(/[^a-zA-Z]/g, "").length || 1;
-    if (/[.!?]$/.test(token.text)) weight += 4;
-    else if (/[,;:]$/.test(token.text)) weight += 2;
+    let weight = 1;
+    if (/[.!?]$/.test(token.text)) weight += 2;
+    else if (/[,;:]$/.test(token.text)) weight += 1;
     return weight;
   });
 }
