@@ -3,18 +3,14 @@
 import { useEffect, useRef, useCallback } from "react";
 import { TextItem } from "@/types";
 
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 2000;
-const CHUNK_GAP_MS = 500; // Breathing room between chunks for other requests
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 // Shared pause flag — set by useTTS when user is playing
 let paused = false;
 export function pauseBackgroundGeneration() { paused = true; }
 export function resumeBackgroundGeneration() { paused = false; }
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function waitWhilePaused() {
   while (paused) {
@@ -25,7 +21,6 @@ async function waitWhilePaused() {
 export function useAudioCache(items: TextItem[]) {
   const generatingRef = useRef<Set<string>>(new Set());
   const mountedRef = useRef(true);
-  const versionRef = useRef<Map<string, number>>(new Map());
   const completedRef = useRef<Set<string>>(new Set());
   const initialGenDone = useRef(false);
 
@@ -34,88 +29,29 @@ export function useAudioCache(items: TextItem[]) {
     if (completedRef.current.has(item.id)) return;
     generatingRef.current.add(item.id);
 
-    const version = (versionRef.current.get(item.id) ?? 0) + 1;
-    versionRef.current.set(item.id, version);
-
     try {
-      // Check current cache status
-      const cacheRes = await fetch(`/api/tts/cache/${item.id}`);
-      if (!cacheRes.ok || !mountedRef.current) return;
-      const cache = await cacheRes.json();
+      // Wait if playback is active
+      await waitWhilePaused();
+      if (!mountedRef.current) return;
 
-      if (cache.complete) {
-        completedRef.current.add(item.id);
-        return;
+      // Single call generates ALL chunks for this item
+      const res = await fetch("/api/tts/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: item.id }),
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) return; // Item deleted
+        throw new Error(`Generation failed (${res.status})`);
       }
 
-      const startChunk = cache.cached ? cache.generatedCount : 0;
-
-      // Generate chunks sequentially with retry
-      let chunkIndex = startChunk;
-      let done = false;
-
-      while (
-        !done &&
-        mountedRef.current &&
-        versionRef.current.get(item.id) === version
-      ) {
-        // Yield to playback requests
-        await waitWhilePaused();
-        if (!mountedRef.current || versionRef.current.get(item.id) !== version) break;
-
-        let lastError: Error | null = null;
-        let succeeded = false;
-
-        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-          if (!mountedRef.current || versionRef.current.get(item.id) !== version) break;
-
-          try {
-            const genRes = await fetch("/api/tts/generate", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ itemId: item.id, chunkIndex }),
-            });
-
-            if (!genRes.ok) {
-              if (genRes.status === 404) {
-                // Item deleted, stop entirely
-                return;
-              }
-              throw new Error(`Generation failed (${genRes.status})`);
-            }
-
-            const result = await genRes.json();
-            done = result.done;
-            chunkIndex++;
-            succeeded = true;
-            break;
-          } catch (error) {
-            lastError = error instanceof Error ? error : new Error(String(error));
-            if (attempt < MAX_RETRIES - 1) {
-              const backoff = BASE_DELAY_MS * Math.pow(2, attempt);
-              console.warn(
-                `Chunk ${chunkIndex} for ${item.id} failed (attempt ${attempt + 1}/${MAX_RETRIES}), retrying in ${backoff}ms...`
-              );
-              await delay(backoff);
-            }
-          }
-        }
-
-        if (!succeeded) {
-          throw lastError ?? new Error("Generation failed after retries");
-        }
-
-        // Breathing room between chunks so we don't saturate serverless capacity
-        if (!done) {
-          await delay(CHUNK_GAP_MS);
-        }
-      }
-
-      if (done) {
+      const result = await res.json();
+      if (result.done) {
         completedRef.current.add(item.id);
       }
     } catch (error) {
-      console.error(`Audio cache generation failed for ${item.id}:`, error);
+      console.error(`Audio generation failed for ${item.id}:`, error);
     } finally {
       generatingRef.current.delete(item.id);
     }
@@ -124,19 +60,17 @@ export function useAudioCache(items: TextItem[]) {
   const generateAll = useCallback(async () => {
     for (const item of items) {
       if (!mountedRef.current) break;
-      if (
-        completedRef.current.has(item.id) ||
-        generatingRef.current.has(item.id)
-      )
-        continue;
+      if (completedRef.current.has(item.id) || generatingRef.current.has(item.id)) continue;
+      // Wait if playback is active before starting next item
+      await waitWhilePaused();
+      if (!mountedRef.current) break;
       await checkAndGenerate(item);
     }
   }, [items, checkAndGenerate]);
 
   useEffect(() => {
     mountedRef.current = true;
-    // Auto-generate audio for all items once after page load.
-    // Runs sequentially (one chunk at a time) and yields to live playback via pause/resume.
+    // Auto-generate all audio once after page load (one API call per item)
     if (initialGenDone.current || items.length === 0) return;
     const timer = setTimeout(() => {
       if (mountedRef.current && !initialGenDone.current) {
@@ -152,14 +86,8 @@ export function useAudioCache(items: TextItem[]) {
 
   const invalidate = useCallback(
     async (itemId: string) => {
-      // Bump version to stop any in-progress generation
-      versionRef.current.set(
-        itemId,
-        (versionRef.current.get(itemId) ?? 0) + 1
-      );
       completedRef.current.delete(itemId);
       await fetch(`/api/tts/cache/${itemId}`, { method: "DELETE" });
-      // Regenerate
       const item = items.find((i) => i.id === itemId);
       if (item) {
         checkAndGenerate(item);

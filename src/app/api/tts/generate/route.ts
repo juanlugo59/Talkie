@@ -3,17 +3,17 @@ import { put } from "@vercel/blob";
 import { getSQL, ensureSchema } from "@/lib/db";
 import { splitTextIntoChunks, synthesizeChunk, hashContent } from "@/lib/tts";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {
     await ensureSchema();
     const sql = getSQL();
-    const { itemId, chunkIndex } = await request.json();
+    const { itemId } = await request.json();
 
-    if (!itemId || chunkIndex === undefined) {
+    if (!itemId) {
       return NextResponse.json(
-        { error: "itemId and chunkIndex required" },
+        { error: "itemId required" },
         { status: 400 }
       );
     }
@@ -28,59 +28,59 @@ export async function POST(request: NextRequest) {
     const contentHash = await hashContent(content);
     const chunks = splitTextIntoChunks(content);
 
-    if (chunkIndex >= chunks.length) {
-      return NextResponse.json(
-        { error: "Chunk index out of range" },
-        { status: 400 }
-      );
-    }
+    // Check which chunks already exist with correct hash
+    const existing = await sql`
+      SELECT chunk_index FROM audio_chunks
+      WHERE item_id = ${itemId} AND content_hash = ${contentHash}
+    `;
+    const existingSet = new Set(existing.map((r) => r.chunk_index));
 
-    // Check if this chunk already exists with same content hash
-    const existing =
-      await sql`SELECT blob_url FROM audio_chunks WHERE item_id = ${itemId} AND chunk_index = ${chunkIndex} AND content_hash = ${contentHash}`;
-    if (existing.length > 0) {
+    // If all chunks already exist, return immediately
+    if (existingSet.size === chunks.length) {
       return NextResponse.json({
-        chunkIndex,
         totalChunks: chunks.length,
-        blobUrl: existing[0].blob_url,
-        done: chunkIndex >= chunks.length - 1,
-        alreadyCached: true,
+        generated: 0,
+        skipped: chunks.length,
+        done: true,
       });
     }
 
-    // Synthesize via Google TTS
-    const { buffer } = await synthesizeChunk(chunks[chunkIndex]);
+    // Generate ALL missing chunks in this single function call
+    let generated = 0;
+    for (let i = 0; i < chunks.length; i++) {
+      if (existingSet.has(i)) continue;
 
-    // Upload to Vercel Blob
-    const blobPath = `audio/${itemId}/chunk-${String(chunkIndex).padStart(4, "0")}.mp3`;
-    const blob = await put(blobPath, buffer, {
-      access: "public",
-      contentType: "audio/mpeg",
-      addRandomSuffix: false,
-    });
+      const { buffer } = await synthesizeChunk(chunks[i]);
 
-    // Upsert into audio_chunks table
-    await sql`
-      INSERT INTO audio_chunks (item_id, chunk_index, blob_url, total_chunks, content_hash)
-      VALUES (${itemId}, ${chunkIndex}, ${blob.url}, ${chunks.length}, ${contentHash})
-      ON CONFLICT (item_id, chunk_index)
-      DO UPDATE SET blob_url = ${blob.url}, total_chunks = ${chunks.length}, content_hash = ${contentHash}
-    `;
+      const blobPath = `audio/${itemId}/chunk-${String(i).padStart(4, "0")}.mp3`;
+      const blob = await put(blobPath, buffer, {
+        access: "public",
+        contentType: "audio/mpeg",
+        addRandomSuffix: false,
+      });
+
+      await sql`
+        INSERT INTO audio_chunks (item_id, chunk_index, blob_url, total_chunks, content_hash)
+        VALUES (${itemId}, ${i}, ${blob.url}, ${chunks.length}, ${contentHash})
+        ON CONFLICT (item_id, chunk_index)
+        DO UPDATE SET blob_url = ${blob.url}, total_chunks = ${chunks.length}, content_hash = ${contentHash}
+      `;
+
+      generated++;
+    }
 
     return NextResponse.json({
-      chunkIndex,
       totalChunks: chunks.length,
-      blobUrl: blob.url,
-      done: chunkIndex >= chunks.length - 1,
-      alreadyCached: false,
+      generated,
+      skipped: existingSet.size,
+      done: true,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    const isTimeout = message.includes("abort");
-    console.error("TTS generate error:", message);
+    console.error("TTS batch generate error:", message);
     return NextResponse.json(
       { error: `Generation failed: ${message}` },
-      { status: isTimeout ? 504 : 500 }
+      { status: 500 }
     );
   }
 }
