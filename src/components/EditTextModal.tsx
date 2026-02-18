@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useRef } from "react";
 import { TextItem } from "@/types";
+import { HighlightedText } from "@/components/HighlightedText";
 
 interface EditTextModalProps {
   item: TextItem | null;
   isPlaying: boolean;
+  currentPosition: number;
   onClose: () => void;
   onSave: (id: string, title: string, content: string) => void;
   onDelete: (id: string) => void;
@@ -15,6 +17,7 @@ interface EditTextModalProps {
 export function EditTextModal({
   item,
   isPlaying,
+  currentPosition,
   onClose,
   onSave,
   onDelete,
@@ -173,9 +176,11 @@ export function EditTextModal({
               </div>
             </>
           ) : (
-            <div className="whitespace-pre-wrap text-foreground/90 leading-relaxed">
-              {item.content}
-            </div>
+            <HighlightedText
+              text={item.content}
+              currentPosition={currentPosition}
+              isActive={isPlaying}
+            />
           )}
         </div>
 

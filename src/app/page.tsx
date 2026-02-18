@@ -238,6 +238,11 @@ export default function Home() {
       <EditTextModal
         item={editingItem}
         isPlaying={tts.isPlaying && tts.currentItemId === editingItem?.id}
+        currentPosition={
+          tts.isPlaying && tts.currentItemId === editingItem?.id
+            ? tts.currentPosition
+            : 0
+        }
         onClose={() => setEditingItem(null)}
         onSave={handleSaveItem}
         onDelete={handleDeleteFromEdit}

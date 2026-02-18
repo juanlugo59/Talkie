@@ -9,6 +9,7 @@ interface TTSState {
   isLoading: boolean;
   progress: number;
   currentItemId: string | null;
+  currentPosition: number;
 }
 
 interface UseTTSOptions {
@@ -23,6 +24,7 @@ export function useTTS(options: UseTTSOptions = {}) {
     isLoading: false,
     progress: 0,
     currentItemId: null,
+    currentPosition: 0,
   });
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -68,7 +70,7 @@ export function useTTS(options: UseTTSOptions = {}) {
         const position = Math.round(
           (overallProgress / 100) * currentItemRef.current.content.length
         );
-        setState((prev) => ({ ...prev, progress: overallProgress }));
+        setState((prev) => ({ ...prev, progress: overallProgress, currentPosition: position }));
         optionsRef.current.onProgressUpdate?.(
           currentItemRef.current!.id,
           Math.round(overallProgress),
@@ -101,6 +103,7 @@ export function useTTS(options: UseTTSOptions = {}) {
             isLoading: false,
             progress: 100,
             currentItemId: null,
+            currentPosition: 0,
           });
           optionsRef.current.onProgressUpdate?.(
             id,
@@ -120,6 +123,7 @@ export function useTTS(options: UseTTSOptions = {}) {
           isLoading: false,
           progress: 0,
           currentItemId: null,
+          currentPosition: 0,
         });
         currentItemRef.current = null;
       };
@@ -234,6 +238,7 @@ export function useTTS(options: UseTTSOptions = {}) {
           isLoading: false,
           progress: 0,
           currentItemId: null,
+          currentPosition: 0,
         });
         currentItemRef.current = null;
       }
@@ -253,6 +258,7 @@ export function useTTS(options: UseTTSOptions = {}) {
         isLoading: true,
         currentItemId: item.id,
         progress: 0,
+        currentPosition: 0,
       });
 
       // Pause background generation so our request gets through
@@ -301,6 +307,7 @@ export function useTTS(options: UseTTSOptions = {}) {
       isLoading: false,
       progress: 0,
       currentItemId: null,
+      currentPosition: 0,
     });
   }, [cleanup]);
 
