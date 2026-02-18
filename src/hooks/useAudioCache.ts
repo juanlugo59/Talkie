@@ -43,7 +43,9 @@ export function useAudioCache(items: TextItem[]) {
 
       if (!res.ok) {
         if (res.status === 404) return; // Item deleted
-        throw new Error(`Generation failed (${res.status})`);
+        const errBody = await res.text().catch(() => "");
+        console.error(`Generate ${res.status}:`, errBody);
+        throw new Error(`Generation failed (${res.status}): ${errBody}`);
       }
 
       const result = await res.json();
