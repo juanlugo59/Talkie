@@ -147,8 +147,9 @@ async function synthesizeChunk(chunkText: string): Promise<Buffer> {
 
 // --- Content hash ---
 async function hashContent(content: string): Promise<string> {
+  const clean = stripMarkdown(content);
   const encoder = new TextEncoder();
-  const data = encoder.encode(TTS_VOICE + ":" + content);
+  const data = encoder.encode(TTS_VOICE + ":" + clean);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray
@@ -297,30 +298,9 @@ async function generateAll(): Promise<number> {
   return generated;
 }
 
-// --- Watch mode ---
-const WATCH = process.argv.includes("--watch");
-const POLL_INTERVAL = 30_000; // 30 seconds
-
-async function watch() {
-  console.log("Watching for new chapters every 30s... (Ctrl+C to stop)\n");
-  while (true) {
-    try {
-      const count = await generateAll();
-      if (count > 0) console.log(`Generated ${count} new chunk(s)\n`);
-    } catch (err) {
-      console.error("Error during generation:", err);
-    }
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL));
-  }
-}
-
-if (WATCH) {
-  watch();
-} else {
-  generateAll()
-    .then((count) => console.log(count > 0 ? `\nGenerated ${count} chunk(s). All done!` : "Everything up to date."))
-    .catch((err) => {
-      console.error("Fatal error:", err);
-      process.exit(1);
-    });
-}
+generateAll()
+  .then((count) => console.log(count > 0 ? `\nGenerated ${count} chunk(s). All done!` : "Everything up to date."))
+  .catch((err) => {
+    console.error("Fatal error:", err);
+    process.exit(1);
+  });
